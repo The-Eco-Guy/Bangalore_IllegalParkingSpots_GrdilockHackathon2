@@ -1,0 +1,112 @@
+
+  You can now view your Streamlit app in your browser.
+
+  URL: http://127.0.0.1:8501
+
+/home/muhir/.local/lib/python3.10/site-packages/esda/getisord.py:421: UserWarning: Gi* requested, but (a) weights are already row-standardized, (b) no weights are on the diagonal, and (c) no default value supplied to star. Assuming that the self-weight is equivalent to the maximum weight in the row. To use a different default (like, .5), set `star=.5`, or use libpysal.weights.fill_diagonal() to set the diagonal values of your weights matrix and use `star=None` in Gi_Local.
+  w, star = _infer_star_and_structure_w(w, star, transform)
+/home/muhir/.local/lib/python3.10/site-packages/libpysal/weights/util.py:826: UserWarning: The weights matrix is not fully connected: 
+ There are 23 disconnected components.
+ There are 15 islands with ids: 5, 6, 22, 64, 246, 268, 279, 280, 282, 318, 319, 372, 568, 760, 775.
+  w = W(neighbors, weights, ids, **kwargs)
+/home/muhir/.local/lib/python3.10/site-packages/esda/getisord.py:527: RuntimeWarning: invalid value encountered in divide
+  z_scores = (statistic - expected_value) / np.sqrt(expected_variance)
+2026-06-19 18:43:37.249 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-06-19 18:43:37.618 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-06-19 18:43:37.931 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-06-19 18:43:38.647 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+/home/muhir/.local/lib/python3.10/site-packages/esda/getisord.py:421: UserWarning: Gi* requested, but (a) weights are already row-standardized, (b) no weights are on the diagonal, and (c) no default value supplied to star. Assuming that the self-weight is equivalent to the maximum weight in the row. To use a different default (like, .5), set `star=.5`, or use libpysal.weights.fill_diagonal() to set the diagonal values of your weights matrix and use `star=None` in Gi_Local.
+  w, star = _infer_star_and_structure_w(w, star, transform)
+/home/muhir/.local/lib/python3.10/site-packages/libpysal/weights/util.py:826: UserWarning: The weights matrix is not fully connected: 
+ There are 23 disconnected components.
+ There are 15 islands with ids: 5, 6, 22, 64, 246, 268, 279, 280, 282, 318, 319, 372, 568, 760, 775.
+  w = W(neighbors, weights, ids, **kwargs)
+/home/muhir/.local/lib/python3.10/site-packages/esda/getisord.py:527: RuntimeWarning: invalid value encountered in divide
+  z_scores = (statistic - expected_value) / np.sqrt(expected_variance)
+2026-06-19 18:44:05.694 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-06-19 18:44:06.168 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-06-19 18:44:06.324 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+/home/muhir/.local/lib/python3.10/site-packages/esda/getisord.py:421: UserWarning: Gi* requested, but (a) weights are already row-standardized, (b) no weights are on the diagonal, and (c) no default value supplied to star. Assuming that the self-weight is equivalent to the maximum weight in the row. To use a different default (like, .5), set `star=.5`, or use libpysal.weights.fill_diagonal() to set the diagonal values of your weights matrix and use `star=None` in Gi_Local.
+  w, star = _infer_star_and_structure_w(w, star, transform)
+/home/muhir/.local/lib/python3.10/site-packages/libpysal/weights/util.py:826: UserWarning: The weights matrix is not fully connected: 
+ There are 23 disconnected components.
+ There are 15 islands with ids: 5, 6, 22, 64, 246, 268, 279, 280, 282, 318, 319, 372, 568, 760, 775.
+  w = W(neighbors, weights, ids, **kwargs)
+/home/muhir/.local/lib/python3.10/site-packages/esda/getisord.py:527: RuntimeWarning: invalid value encountered in divide
+  z_scores = (statistic - expected_value) / np.sqrt(expected_variance)
+2026-06-19 18:44:08.401 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-06-19 18:44:09.049 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-06-19 18:44:09.451 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-06-19 18:44:11.894 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+/home/muhir/.local/lib/python3.10/site-packages/esda/getisord.py:421: UserWarning: Gi* requested, but (a) weights are already row-standardized, (b) no weights are on the diagonal, and (c) no default value supplied to star. Assuming that the self-weight is equivalent to the maximum weight in the row. To use a different default (like, .5), set `star=.5`, or use libpysal.weights.fill_diagonal() to set the diagonal values of your weights matrix and use `star=None` in Gi_Local.
+  w, star = _infer_star_and_structure_w(w, star, transform)
+/home/muhir/.local/lib/python3.10/site-packages/libpysal/weights/util.py:826: UserWarning: The weights matrix is not fully connected: 
+ There are 23 disconnected components.
+ There are 15 islands with ids: 5, 6, 22, 64, 246, 268, 279, 280, 282, 318, 319, 372, 568, 760, 775.
+  w = W(neighbors, weights, ids, **kwargs)
+/home/muhir/.local/lib/python3.10/site-packages/esda/getisord.py:527: RuntimeWarning: invalid value encountered in divide
+  z_scores = (statistic - expected_value) / np.sqrt(expected_variance)
+2026-06-19 18:44:59.656 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-06-19 18:45:00.021 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-06-19 18:45:00.232 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-06-19 18:45:00.907 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
