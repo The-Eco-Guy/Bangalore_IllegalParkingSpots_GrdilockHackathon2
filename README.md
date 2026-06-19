@@ -4,15 +4,21 @@ AI-driven parking hotspot detection, congestion impact scoring, and enforcement 
 
 ## Overview
 
-**Bangalore Illegal Parking Spots — Gridlock Intelligence** is a spatial analytics and forecasting system that transforms parking violation records into actionable enforcement intelligence. The application identifies illegal parking hotspots, quantifies their traffic-friction impact, detects neighborhood spillover effects, and forecasts short-term enforcement priorities across Bangalore.
-
-The project is built around a simple but important idea:
+**Bangalore Illegal Parking Spots — Gridlock Intelligence** is a spatial analytics and forecasting system that transforms parking violation records into actionable enforcement intelligence. The project is built around a simple but important idea:
 
 > Not all parking violations create the same amount of congestion.
 
-A small cluster of vehicles blocking a junction can be far more disruptive than a larger number of vehicles parked in a low-impact side street. This repository turns that principle into a measurable, map-based decision system.
+A small cluster of vehicles blocking a junction can be far more disruptive than a larger number of vehicles parked in a low-impact side street. This repository turns that principle into a measurable, repeatable workflow for city-scale enforcement planning.
 
----
+The solution combines:
+
+- **H3 spatial aggregation** for consistent city-wide analysis
+- **source-based vehicle equivalency values** for impact-aware scoring
+- **spatial hotspot detection** with Getis-Ord Gi*
+- **time-bucketed analysis** to reflect patrol shifts and traffic patterns
+- **forecasting** with XGBoost
+- **micro-hotspot discovery** with DBSCAN
+- **interactive dashboards** for historical and predictive review
 
 ## Problem Statement
 
@@ -30,14 +36,12 @@ On-street illegal parking and spillover parking near commercial areas, metro sta
 
 **How can AI-driven parking intelligence detect illegal parking hotspots and quantify their impact on traffic flow to enable targeted enforcement?**
 
----
-
 ## Our Approach
 
 This solution addresses the problem with a multi-layer intelligence pipeline:
 
 1. **Aggregate raw violations into spatial cells** using H3 hexagons.
-2. **Score each cell by both volume and traffic impact** using a Congestion Impact Score (CIS).
+2. **Score each cell by both volume and traffic impact** using a Congestion Impact Score.
 3. **Detect spillover hotspots** with Local Getis-Ord Gi* statistics.
 4. **Classify enforcement priority** into operational tiers.
 5. **Forecast future hotspots** using XGBoost-based hourly predictions.
@@ -45,8 +49,6 @@ This solution addresses the problem with a multi-layer intelligence pipeline:
 7. **Present everything in an interactive Streamlit dashboard** for real-world decision making.
 
 This turns raw violation data into a live command-center style view for traffic enforcement teams.
-
----
 
 ## Key Capabilities
 
@@ -59,11 +61,57 @@ This turns raw violation data into a live command-center style view for traffic 
 - **Interactive dashboard** with historical and predictive layers
 - **Downloadable forecast exports** for field teams and planning
 
----
+## Methodology and Decision Rationale
+
+### 1) Why H3 hexagons
+
+We use H3 because enforcement is operationally zone-based, not point-based. Hexagonal cells provide a stable spatial unit for ranking, comparison, and neighborhood analysis. Compared with square grids, hexagons reduce directional bias and provide a more natural adjacency structure for spillover analysis.
+
+### 2) Why H3 resolution 8
+
+Resolution 8 is a practical city-scale compromise. It is fine enough to expose street-level differences, but not so fine that the dashboard becomes noisy or difficult to interpret for command-center use. It also maps well to patrol planning, where decisions are usually made at beat or zone level rather than at a single coordinate.
+
+### 3) Why source-based vehicle scores instead of heuristics
+
+Vehicle impact is measured using passenger car equivalent values sourced from **IRC:106-1990** and related Indian traffic engineering references, rather than hand-tuned weights. This matters because the traffic mix in Indian cities is heterogeneous, with a large share of two-wheelers, autos, cars, commercial vehicles, and buses sharing the same road space. Source-based scores are more defensible, reproducible, and aligned with established traffic engineering practice than arbitrary heuristic weights.
+
+### 4) Why location multipliers are used
+
+A parked vehicle does not have the same operational impact everywhere. Parking near a junction, intersection, signal, zebra crossing, or arterial road creates more friction than parking on a low-volume side street. The location factor is included so the score reflects both **what** is parked and **where** it is parked.
+
+### 5) Why Getis-Ord Gi* is used
+
+Raw counts alone do not reveal whether violations are spatially clustered enough to represent a real hotspot. Gi* adds the neighborhood context needed to distinguish isolated high-count cells from meaningful spillover clusters. This makes the hotspot map statistically grounded rather than purely descriptive.
+
+### 6) Why time buckets are used
+
+Parking behavior and enforcement visibility vary by time of day. Discretizing the data into time buckets makes the output actionable for shift-based deployment and avoids smoothing over important operational differences. It also helps expose enforcement bias, such as missing or underrepresented peak periods.
+
+### 7) Why H3 polygon layers are used for the dual heatmap
+
+The dual heatmap is designed as a direct comparison between two comparable layers:
+
+- **Layer A:** violation density / impact per H3 cell
+- **Layer B:** hotspot significance per H3 cell
+
+Using H3 polygons ensures both layers share the same boundaries. That makes the comparison precise. A cell that is strong in Layer A but absent in Layer B is immediately visible as a high-volume, low-significance zone; a cell that is strong in Layer B but weak in Layer A becomes an under-enforced high-impact zone.
+
+### 8) Why XGBoost is used for forecasting
+
+The forecasting task is tabular and feature-rich: time lags, rolling statistics, spatial identity, time-of-day flags, and historical patterns all matter. XGBoost is well suited to this kind of structured data and provides strong performance without requiring a heavy sequence model.
+
+### 9) Why a naive baseline matters
+
+Forecasting should be judged against a simple reference such as a 7-day lag baseline. Without a baseline, it is hard to tell whether the model is actually adding value. Comparing against a naive predictor makes the forecast evaluation honest and interpretable.
+
+### 10) Why DBSCAN is used
+
+H3 cells are useful for city-wide operations, but some enforcement problems require a finer lens. DBSCAN helps detect dense micro-clusters of illegal parking points, such as double-parking pockets or localized spill zones around junctions.
+
 
 ## How We Tackled the Problem in Detail
 
-## 1) From raw complaints to spatial intelligence
+## 1) Spatial intelligence
 
 The core challenge in parking enforcement is not just counting violations. The real challenge is understanding **where violations concentrate**, **when they intensify**, and **how much they disrupt flow**.
 
@@ -79,9 +127,7 @@ To solve this, the raw violation records are first cleaned and standardized in `
 
 This gives a consistent city-wide spatial grid that can be analyzed over time.
 
----
-
-## 2) Measuring impact, not just volume
+## 2) Measuring impact
 
 A major weakness in traditional enforcement is that it treats all violations as equal. This project fixes that by assigning each violation a **Passenger Car Equivalent (PCE)** weight and a location multiplier.
 
@@ -100,8 +146,6 @@ In operational terms:
 - a scooter on a side lane is not treated the same as a bus at an intersection
 - silent bottlenecks become visible
 - enforcement can focus on the cells that matter most for movement, not just the cells with the most tickets
-
----
 
 ## 3) Building a city-wide hourly hotspot model
 
@@ -131,8 +175,7 @@ The system trains two XGBoost models:
 
 The classification target is hotspot activity at **10 violations per hour**.
 
-
----
+This is a practical threshold for planning enforcement intensity.
 
 ## 4) Detecting spillover and neighborhood effects
 
@@ -154,11 +197,9 @@ This creates a **spatial hot-spot score** for every cell.
 
 This is important because a low-volume cell may still be a major problem if it sits inside a cluster of high-impact cells.
 
----
-
 ## 5) Turning analytics into enforcement tiers
 
-The project converts analytics into **actionable enforcement classes**.
+The project does not stop at visualization. It converts analytics into **actionable enforcement classes**.
 
 In `scoring.py`, cells are classified into:
 
@@ -180,15 +221,13 @@ In `scoring.py`, cells are classified into:
 - **Standard**
   - remaining cells
 
-The thresholds are based on the **90th percentile of active cells**.
+The thresholds are based on the **90th percentile of active cells**, which makes the classification adaptive to the city’s real distribution rather than relying on arbitrary fixed cutoffs.
 
 This is particularly useful for dispatching:
 
 - towing vehicles
 - enforcement patrols
 - targeted monitoring teams
-
----
 
 ## 6) Forecasting future enforcement demand
 
@@ -202,12 +241,13 @@ The forecast pipeline:
 - estimates future congestion impact
 - saves forecast results to `predictions_7d.parquet`
 
-To make the forecast more realistic, `prediction.py` applies **temporal calibration** based on historical per-cell hourly and day-of-week behavior. This avoids a flat-looking forecast where adjacent hours appear nearly identical.
+To make the forecast more realistic, `prediction.py` applies **temporal calibration** based on historical per-cell hourly and day-of-week behavior. This avoids a flat-looking forecast where adjacent hours and days are treated the same.
 
----
+In practice, this means the system does not merely project a static average into the future. It reintroduces the natural rhythm of Bangalore traffic patterns.
 
 ## 7) Finding micro-hotspots with DBSCAN
 
+While H3 aggregation is excellent for city-scale planning, some problems require a finer lens.
 
 `data_processing.py` includes DBSCAN clustering on raw violation coordinates using haversine distance. This helps identify:
 
@@ -217,8 +257,6 @@ To make the forecast more realistic, `prediction.py` applies **temporal calibrat
 - clustered spill locations around sensitive junctions
 
 The dashboard can run clustering for both historical data and simulated forecast points, helping enforcement teams understand the **shape** of a hotspot, not just its aggregate severity.
-
----
 
 ## System Architecture
 
@@ -242,8 +280,6 @@ The dashboard can run clustering for both historical data and simulated forecast
 - `prediction.py` — forecast loading, calibration, and filtering helpers
 - `app.py` — Streamlit UI for historical and predictive analysis
 
----
-
 ## Dashboard Views
 
 ### Historical Analysis
@@ -265,8 +301,6 @@ The dashboard can run clustering for both historical data and simulated forecast
 - Predicted DBSCAN clusters
 - Model metrics and feature summary
 
----
-
 ## Technical Stack
 
 - **Python**
@@ -279,8 +313,6 @@ The dashboard can run clustering for both historical data and simulated forecast
 - **libpysal + esda** for spatial statistics
 - **Matplotlib** for charts
 - **PyArrow** for Parquet caching
-
----
 
 ## Repository Structure
 
@@ -297,9 +329,6 @@ The dashboard can run clustering for both historical data and simulated forecast
 └── scratch/
     ├── test_coords.py
     └── test_minimal_map.py
-```
-
----
 
 ## Requirements
 
