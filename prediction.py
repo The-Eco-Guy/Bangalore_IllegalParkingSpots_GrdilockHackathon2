@@ -17,57 +17,62 @@ def _apply_temporal_calibration(df):
     hist['date'] = pd.to_datetime(hist['date'])
     hist['day_of_week'] = hist['date'].dt.dayofweek
 
-    cell_base = (
-        hist.groupby('h3_8', as_index=False)['violation_count']
-        .mean()
-        .rename(columns={'violation_count': 'cell_hist_mean'})
-    )
-    cell_hour = (
-        hist.groupby(['h3_8', 'hour'], as_index=False)['violation_count']
-        .mean()
-        .rename(columns={'violation_count': 'cell_hour_mean'})
-    )
-    cell_dow = (
-        hist.groupby(['h3_8', 'day_of_week'], as_index=False)['violation_count']
-        .mean()
-        .rename(columns={'violation_count': 'cell_dow_mean'})
-    )
-    global_hour = (
-        hist.groupby('hour', as_index=False)['violation_count']
-        .mean()
-        .rename(columns={'violation_count': 'global_hour_mean'})
-    )
-    global_dow = (
-        hist.groupby('day_of_week', as_index=False)['violation_count']
-        .mean()
-        .rename(columns={'violation_count': 'global_dow_mean'})
-    )
+    # Calculate sums for true hourly/weekly rate ratio calculations
+    cell_sums = hist.groupby('h3_8')['violation_count'].sum().rename('cell_sum')
+    cell_hour_sums = hist.groupby(['h3_8', 'hour'])['violation_count'].sum().rename('cell_hour_sum')
+    cell_dow_sums = hist.groupby(['h3_8', 'day_of_week'])['violation_count'].sum().rename('cell_dow_sum')
 
-    global_base = max(hist['violation_count'].mean(), 1e-6)
+    # Global sums for fallback if a cell lacks data for a particular hour/day
+    global_sum = hist['violation_count'].sum()
+    global_hour_sums = hist.groupby('hour')['violation_count'].sum().rename('global_hour_sum')
+    global_dow_sums = hist.groupby('day_of_week')['violation_count'].sum().rename('global_dow_sum')
 
-    calibrated = df.merge(cell_base, on='h3_8', how='left')
-    calibrated = calibrated.merge(cell_hour, on=['h3_8', 'hour'], how='left')
-    calibrated = calibrated.merge(cell_dow, on=['h3_8', 'day_of_week'], how='left')
-    calibrated = calibrated.merge(global_hour, on='hour', how='left')
-    calibrated = calibrated.merge(global_dow, on='day_of_week', how='left')
+    # Merge sum columns into predictions
+    calibrated = df.merge(cell_sums, on='h3_8', how='left')
+    calibrated = calibrated.merge(cell_hour_sums, on=['h3_8', 'hour'], how='left')
+    calibrated = calibrated.merge(cell_dow_sums, on=['h3_8', 'day_of_week'], how='left')
+    calibrated = calibrated.merge(global_hour_sums, on='hour', how='left')
+    calibrated = calibrated.merge(global_dow_sums, on='day_of_week', how='left')
 
-    calibrated['cell_hist_mean'] = calibrated['cell_hist_mean'].fillna(global_base)
-    calibrated['cell_hour_mean'] = calibrated['cell_hour_mean'].fillna(calibrated['global_hour_mean']).fillna(calibrated['cell_hist_mean'])
-    calibrated['cell_dow_mean'] = calibrated['cell_dow_mean'].fillna(calibrated['global_dow_mean']).fillna(calibrated['cell_hist_mean'])
+    # Fill NaNs with 0
+    calibrated['cell_sum'] = calibrated['cell_sum'].fillna(0.0)
+    calibrated['cell_hour_sum'] = calibrated['cell_hour_sum'].fillna(0.0)
+    calibrated['cell_dow_sum'] = calibrated['cell_dow_sum'].fillna(0.0)
 
-    hour_factor = calibrated['cell_hour_mean'] / calibrated['cell_hist_mean'].clip(lower=1e-6)
-    dow_factor = calibrated['cell_dow_mean'] / calibrated['cell_hist_mean'].clip(lower=1e-6)
+    # Calculate factors
+    # For cells with > 0 total violations:
+    #   hour_factor = (cell_hour_sum / num_days) / (cell_sum / (num_days * 24)) = cell_hour_sum / (cell_sum / 24)
+    #   dow_factor = (cell_dow_sum / num_weeks) / (cell_sum / (num_weeks * 7)) = cell_dow_sum / (cell_sum / 7)
+    cell_has_violations = calibrated['cell_sum'] > 0
 
-    # Blend local and global temporal effects and keep multipliers bounded.
-    combined_factor = (0.7 * hour_factor) + (0.3 * dow_factor)
-    calibrated['temporal_factor'] = combined_factor.clip(lower=0.6, upper=1.8)
+    # Local factors
+    local_hour_factor = calibrated['cell_hour_sum'] / (calibrated['cell_sum'] / 24.0 + 1e-6)
+    local_dow_factor = calibrated['cell_dow_sum'] / (calibrated['cell_sum'] / 7.0 + 1e-6)
+
+    # Global fallback factors
+    global_hour_factor = calibrated['global_hour_sum'] / (global_sum / 24.0 + 1e-6)
+    global_dow_factor = calibrated['global_dow_sum'] / (global_sum / 7.0 + 1e-6)
+
+    # Combine local and global (using global as fallback or smoothing for small cell volumes)
+    # If a cell has very few violations, smooth towards the global temporal pattern
+    smoothing_threshold = 20.0
+    alpha = (calibrated['cell_sum'] / smoothing_threshold).clip(lower=0.0, upper=1.0)
+
+    hour_factor = alpha * local_hour_factor + (1 - alpha) * global_hour_factor
+    dow_factor = alpha * local_dow_factor + (1 - alpha) * global_dow_factor
+
+    # Multiplicative combination of hour and day of week to respect off-peak hours
+    combined_factor = hour_factor * dow_factor
+
+    # Clip to a realistic dynamic range [0.01, 10.0] to capture high peaks and low nights
+    calibrated['temporal_factor'] = combined_factor.clip(lower=0.01, upper=10.0)
 
     calibrated['pred_count'] = calibrated['pred_count'] * calibrated['temporal_factor']
     calibrated['pred_weighted_pce'] = calibrated['pred_weighted_pce'] * calibrated['temporal_factor']
 
     drop_cols = [
-        'cell_hist_mean', 'cell_hour_mean', 'cell_dow_mean',
-        'global_hour_mean', 'global_dow_mean', 'temporal_factor'
+        'cell_sum', 'cell_hour_sum', 'cell_dow_sum',
+        'global_hour_sum', 'global_dow_sum', 'temporal_factor'
     ]
     return calibrated.drop(columns=drop_cols, errors='ignore')
 

@@ -24,6 +24,68 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Helper functions and callbacks for dynamic sidebar filters synchronization
+def get_hour_options_for_bucket(bucket):
+    if bucket == "All":
+        return ["All"] + list(range(24))
+    elif bucket == "AM Peak (07:00 - 10:59)":
+        return ["All"] + list(range(7, 11))
+    elif bucket == "Midday (11:00 - 16:59)":
+        return ["All"] + list(range(11, 17))
+    elif bucket == "PM Peak (17:00 - 21:59)":
+        return ["All"] + list(range(17, 22))
+    elif bucket == "Off-Peak Night (22:00 - 06:59)":
+        return ["All"] + [22, 23, 0, 1, 2, 3, 4, 5, 6]
+    return ["All"]
+
+def on_hist_hour_change():
+    h = st.session_state.get('hist_hour', "All")
+    if h == "All":
+        pass
+    else:
+        h_val = int(h)
+        if 7 <= h_val <= 10:
+            st.session_state['hist_time_bucket'] = "AM Peak (07:00 - 10:59)"
+        elif 11 <= h_val <= 16:
+            st.session_state['hist_time_bucket'] = "Midday (11:00 - 16:59)"
+        elif 17 <= h_val <= 21:
+            st.session_state['hist_time_bucket'] = "PM Peak (17:00 - 21:59)"
+        else:
+            st.session_state['hist_time_bucket'] = "Off-Peak Night (22:00 - 06:59)"
+
+def on_hist_bucket_change():
+    bucket = st.session_state.get('hist_time_bucket', "All")
+    h = st.session_state.get('hist_hour', "All")
+    if h != "All":
+        h_val = int(h)
+        valid_hours = data_processing.get_hours_for_bucket(bucket)
+        if bucket != "All" and h_val not in valid_hours:
+            st.session_state['hist_hour'] = "All"
+
+def on_pred_hour_change():
+    h = st.session_state.get('pred_hour', "All")
+    if h == "All":
+        pass
+    else:
+        h_val = int(h)
+        if 7 <= h_val <= 10:
+            st.session_state['pred_time_bucket'] = "AM Peak (07:00 - 10:59)"
+        elif 11 <= h_val <= 16:
+            st.session_state['pred_time_bucket'] = "Midday (11:00 - 16:59)"
+        elif 17 <= h_val <= 21:
+            st.session_state['pred_time_bucket'] = "PM Peak (17:00 - 21:59)"
+        else:
+            st.session_state['pred_time_bucket'] = "Off-Peak Night (22:00 - 06:59)"
+
+def on_pred_bucket_change():
+    bucket = st.session_state.get('pred_time_bucket', "All")
+    h = st.session_state.get('pred_hour', "All")
+    if h != "All":
+        h_val = int(h)
+        valid_hours = data_processing.get_hours_for_bucket(bucket)
+        if bucket != "All" and h_val not in valid_hours:
+            st.session_state['pred_hour'] = "All"
+
 # Custom premium CSS styling for dark mode and glassmorphism
 st.markdown("""
 <style>
@@ -127,6 +189,8 @@ def load_all_data():
 try:
     hist_df, dbscan_df, cell_meta, pred_df, model_meta = load_all_data()
     all_cells = cell_meta['h3_8'].tolist()
+    global_pred_count_75th = float(max(0.05, pred_df['pred_count'].quantile(0.75)))
+    global_pred_pce_75th = float(max(0.05, pred_df['pred_weighted_pce'].quantile(0.75)))
 except Exception as e:
     st.error(f"Failed to load cached datasets. Please make sure to run preprocess_and_train.py first. Error: {e}")
     st.stop()
@@ -205,7 +269,36 @@ def build_prediction_download(df, selected_date, selected_hour, selected_bucket,
     export_df['selected_forecast_hour'] = str(selected_hour)
     export_df['selected_time_bucket'] = str(selected_bucket)
     export_df['selected_prediction_mode'] = selected_layer
-    export_df['visible_in_selected_layer'] = get_prediction_visibility_mask(export_df, selected_layer)
+    
+    # Calculate mask
+    mask = get_prediction_visibility_mask(export_df, selected_layer)
+    export_df['visible_in_selected_layer'] = mask
+    
+    # Filter to visible rows
+    export_df = export_df[mask].copy()
+    
+    # Add predicted_metric and predicted_value columns based on selected mode/layer
+    if selected_layer == "🔮 Predicted Violations":
+        export_df['predicted_metric'] = "Violations Count"
+        export_df['predicted_value'] = export_df['pred_count']
+    elif selected_layer == "🔮 Predicted Congestion Impact":
+        export_df['predicted_metric'] = "PCE Congestion Score"
+        export_df['predicted_value'] = export_df['pred_weighted_pce']
+    elif selected_layer == "🔮 Predicted Combined Map":
+        export_df['predicted_metric'] = "Combined PCE and Count"
+        export_df['predicted_value'] = export_df['pred_count'] + export_df['pred_weighted_pce']
+    elif selected_layer == "🔮 Predicted Spillover":
+        export_df['predicted_metric'] = "Spillover Z-Score"
+        export_df['predicted_value'] = export_df['gi_zscore']
+    elif selected_layer == "🚔 Predicted Enforcement Plan":
+        export_df['predicted_metric'] = "Enforcement Classification"
+        export_df['predicted_value'] = export_df['roi_class']
+    elif selected_layer == "🔮 Predicted Clusters (DBSCAN)":
+        export_df['predicted_metric'] = "Projected Violations"
+        export_df['predicted_value'] = export_df['pred_count']
+    else:
+        export_df['predicted_metric'] = "Predicted Count"
+        export_df['predicted_value'] = export_df['pred_count']
 
     export_columns = [
         'h3_8',
@@ -213,7 +306,8 @@ def build_prediction_download(df, selected_date, selected_hour, selected_bucket,
         'selected_forecast_hour',
         'selected_time_bucket',
         'selected_prediction_mode',
-        'visible_in_selected_layer',
+        'predicted_metric',
+        'predicted_value',
         'junction_name',
         'lat_center',
         'lon_center',
@@ -226,10 +320,6 @@ def build_prediction_download(df, selected_date, selected_hour, selected_bucket,
         'gi_zscore',
         'gi_pvalue',
         'roi_class',
-        'pred_density_active',
-        'pred_congestion_active',
-        'pred_spillover_significant',
-        'pred_enforcement_visible',
     ]
     available_columns = [col for col in export_columns if col in export_df.columns]
     return export_df[available_columns].to_csv(index=False).encode('utf-8')
@@ -608,28 +698,64 @@ if nav == "🔍 Historical Analysis":
     # Date selection
     min_date = hist_df['date'].min()
     max_date = hist_df['date'].max()
+    # Initialize session state keys for historical filters
+    if 'hist_time_bucket' not in st.session_state:
+        st.session_state['hist_time_bucket'] = "All"
+    if 'hist_hour' not in st.session_state:
+        st.session_state['hist_hour'] = "All"
+
     selected_date_range = st.sidebar.date_input(
         "Date Range",
         value=(max_date - pd.Timedelta(days=14), max_date),
         min_value=min_date,
         max_value=max_date
     )
-    if isinstance(selected_date_range, tuple) and len(selected_date_range) == 2:
-        start_date, end_date = selected_date_range
+    
+    # Safe date range unpacking and validation
+    start_date, end_date = None, None
+    if isinstance(selected_date_range, tuple):
+        if len(selected_date_range) == 2:
+            start_date, end_date = selected_date_range
+        elif len(selected_date_range) == 1:
+            start_date = selected_date_range[0]
+            end_date = selected_date_range[0]
     else:
         start_date = selected_date_range
         end_date = selected_date_range
+
+    if start_date is None or end_date is None:
+        start_date = min_date
+        end_date = max_date
+
+    # Validate/enforce chronological ordering
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
     
     # Time bucket
-    time_bucket = st.sidebar.selectbox(
+    time_bucket_val = st.sidebar.selectbox(
         "Time Bucket",
         options=["All", "AM Peak (07:00 - 10:59)", "Midday (11:00 - 16:59)", "PM Peak (17:00 - 21:59)", "Off-Peak Night (22:00 - 06:59)"],
-        index=0
+        key='hist_time_bucket',
+        on_change=on_hist_bucket_change
     )
     
-    # Hour filter
-    hour_options = ["All"] + list(range(24))
-    hour = st.sidebar.selectbox("Hour of Day", options=hour_options, index=0)
+    # Dynamic hour options based on selected bucket
+    allowed_hour_options = get_hour_options_for_bucket(st.session_state['hist_time_bucket'])
+    
+    # Safety check: make sure current hour is in allowed options
+    if st.session_state['hist_hour'] not in allowed_hour_options:
+        st.session_state['hist_hour'] = "All"
+        
+    hour_val = st.sidebar.selectbox(
+        "Hour of Day",
+        options=allowed_hour_options,
+        key='hist_hour',
+        on_change=on_hist_hour_change
+    )
+    
+    # Expose current selections to rest of script
+    time_bucket = st.session_state['hist_time_bucket']
+    hour = st.session_state['hist_hour']
     
     # Filter aggregated data dynamically
     df_filtered = data_processing.filter_aggregated_data(
@@ -830,6 +956,22 @@ if nav == "🔍 Historical Analysis":
 
         render_pydeck_map([layer], map_tooltip, "hist_congestion_map", df_scored_clean)
         
+        # Top Congestion Impact Bottlenecks table
+        st.write("### 🏆 Top Congestion Impact Bottlenecks")
+        busiest_congestion = df_scored_clean[df_scored_clean['weighted_pce'] > 0].sort_values('weighted_pce', ascending=False).head(10).copy()
+        tbl_congestion = busiest_congestion[['h3_8', 'junction_name', 'weighted_pce', 'violations']].rename(columns={
+            'h3_8': 'H3 Index',
+            'junction_name': 'Dominant Junction / Area',
+            'weighted_pce': 'PCE Congestion Score',
+            'violations': 'Violation Count'
+        })
+        st.dataframe(
+            tbl_congestion,
+            width="stretch",
+            hide_index=True,
+            key="hist_congestion_tbl"
+        )
+        
         # Detailed inspector panel on click/select
         st.write("### 🔍 H3 Cell Profile Inspector")
         render_cell_inspector(
@@ -873,6 +1015,26 @@ if nav == "🔍 Historical Analysis":
 
         render_pydeck_map([fill_layer, outline_layer], map_tooltip, "hist_combined_map", df_scored_clean)
 
+        # Top Busiest Combined Risk Areas table
+        st.write("### 🏆 Top Busiest Combined Risk Areas")
+        combined_busiest = df_scored_clean[(df_scored_clean['violations'] > 0) | (df_scored_clean['weighted_pce'] > 0)].copy()
+        combined_busiest['combined_score'] = combined_busiest['violations'] + combined_busiest['weighted_pce']
+        combined_busiest = combined_busiest.sort_values('combined_score', ascending=False).head(10).copy()
+        
+        tbl_combined = combined_busiest[['h3_8', 'junction_name', 'violations', 'weighted_pce']].rename(columns={
+            'h3_8': 'H3 Index',
+            'junction_name': 'Dominant Junction / Area',
+            'violations': 'Violation Count',
+            'weighted_pce': 'PCE Congestion Score'
+        })
+        st.dataframe(
+            tbl_combined,
+            width="stretch",
+            hide_index=True,
+            key="hist_combined_tbl"
+        )
+
+        st.write("### 🔍 H3 Cell Profile Inspector")
         render_cell_inspector(
             df_scored_clean,
             cell_meta,
@@ -1180,16 +1342,37 @@ else:
     future_dates_list = sorted(pred_df['date'].unique())
     selected_f_date = st.sidebar.selectbox("Forecast Date", options=future_dates_list)
     
+    # Initialize session state keys for forecast filters
+    if 'pred_time_bucket' not in st.session_state:
+        st.session_state['pred_time_bucket'] = "All"
+    if 'pred_hour' not in st.session_state:
+        st.session_state['pred_hour'] = "All"
+        
     # Time bucket on predictions
-    f_time_bucket = st.sidebar.selectbox(
+    f_time_bucket_val = st.sidebar.selectbox(
         "Forecast Time Bucket",
         options=["All", "AM Peak (07:00 - 10:59)", "Midday (11:00 - 16:59)", "PM Peak (17:00 - 21:59)", "Off-Peak Night (22:00 - 06:59)"],
-        index=0
+        key='pred_time_bucket',
+        on_change=on_pred_bucket_change
     )
     
-    # Hour selector on predictions
-    f_hour_options = ["All"] + list(range(24))
-    f_hour = st.sidebar.selectbox("Forecast Hour of Day", options=f_hour_options, index=0) # default to All
+    # Filter hours options based on selected bucket
+    allowed_f_hour_options = get_hour_options_for_bucket(st.session_state['pred_time_bucket'])
+    
+    # Safety check: make sure current forecast hour is in allowed options
+    if st.session_state['pred_hour'] not in allowed_f_hour_options:
+        st.session_state['pred_hour'] = "All"
+        
+    f_hour_val = st.sidebar.selectbox(
+        "Forecast Hour of Day",
+        options=allowed_f_hour_options,
+        key='pred_hour',
+        on_change=on_pred_hour_change
+    )
+    
+    # Expose current selections to rest of script
+    f_time_bucket = st.session_state['pred_time_bucket']
+    f_hour = st.session_state['pred_hour']
     
     # Filter predictions dynamically
     df_f_filtered = prediction.filter_predictions(
@@ -1251,8 +1434,8 @@ else:
             colors_outline_f.append([r, g, b, 255])
         df_f_scored_clean['line_color_pred_c'] = colors_outline_f
 
-        pred_count_cutoff = max(0.05, df_f_scored_clean['pred_count'].quantile(0.75))
-        pred_pce_cutoff = max(0.05, df_f_scored_clean['pred_weighted_pce'].quantile(0.75))
+        pred_count_cutoff = global_pred_count_75th
+        pred_pce_cutoff = global_pred_pce_75th
         df_f_scored_clean['pred_density_active'] = df_f_scored_clean['pred_count'] >= pred_count_cutoff
         df_f_scored_clean['pred_congestion_active'] = df_f_scored_clean['pred_weighted_pce'] >= pred_pce_cutoff
     else:
@@ -1441,6 +1624,22 @@ else:
             df_f_scored_clean[df_f_scored_clean['pred_congestion_active']],
         )
         
+        # Top Predicted Congestion Bottlenecks table
+        st.write("### 🏆 Top Predicted Congestion Bottlenecks")
+        pred_busiest_congestion = df_f_scored_clean[df_f_scored_clean['pred_congestion_active']].sort_values('pred_weighted_pce', ascending=False).head(10).copy()
+        tbl_pred_congestion = pred_busiest_congestion[['h3_8', 'junction_name', 'pred_weighted_pce', 'pred_count']].rename(columns={
+            'h3_8': 'H3 Index',
+            'junction_name': 'Dominant Junction / Area',
+            'pred_weighted_pce': 'Predicted PCE Score',
+            'pred_count': 'Predicted Violations / Hr'
+        })
+        st.dataframe(
+            tbl_pred_congestion,
+            width="stretch",
+            hide_index=True,
+            key="pred_congestion_tbl"
+        )
+        
         # Selectbox inspector for predictions
         st.write("### 🔍 H3 Cell Predicted Profile Inspector")
         render_cell_inspector(
@@ -1489,6 +1688,26 @@ else:
             df_f_scored_clean[df_f_scored_clean['pred_density_active'] | df_f_scored_clean['pred_congestion_active']],
         )
 
+        # Top Predicted Combined Risk Areas table
+        st.write("### 🏆 Top Predicted Combined Risk Areas")
+        combined_pred_busiest = df_f_scored_clean[df_f_scored_clean['pred_density_active'] | df_f_scored_clean['pred_congestion_active']].copy()
+        combined_pred_busiest['combined_score'] = combined_pred_busiest['pred_count'] + combined_pred_busiest['pred_weighted_pce']
+        combined_pred_busiest = combined_pred_busiest.sort_values('combined_score', ascending=False).head(10).copy()
+        
+        tbl_pred_combined = combined_pred_busiest[['h3_8', 'junction_name', 'pred_count', 'pred_weighted_pce']].rename(columns={
+            'h3_8': 'H3 Index',
+            'junction_name': 'Dominant Junction / Area',
+            'pred_count': 'Predicted Violations / Hr',
+            'pred_weighted_pce': 'Predicted PCE Score'
+        })
+        st.dataframe(
+            tbl_pred_combined,
+            width="stretch",
+            hide_index=True,
+            key="pred_combined_tbl"
+        )
+
+        st.write("### 🔍 H3 Cell Predicted Profile Inspector")
         render_cell_inspector(
             df_f_scored_clean[df_f_scored_clean['pred_density_active'] | df_f_scored_clean['pred_congestion_active']],
             cell_meta,
@@ -1810,6 +2029,22 @@ else:
             # Show number of predicted clusters
             n_sim_clusters = len(unique_sim) - (1 if -1 in unique_sim else 0)
             st.success(f"Forecast model projects **{n_sim_clusters} dense clusters** forming during this hour.")
+
+            # Clustered Hotspot Centroids Summary table
+            if not sim_centroids.empty:
+                st.write("### 📍 Predicted Clustered Hotspot Centroids Summary")
+                st.dataframe(
+                    sim_centroids.rename(columns={
+                        'cluster': 'Cluster ID',
+                        'latitude': 'Latitude Centroid',
+                        'longitude': 'Longitude Centroid',
+                        'violations': 'Total Projected Violations in Cluster',
+                        'dominant_violation': 'Dominant Violation Type'
+                    })[['Cluster ID', 'Latitude Centroid', 'Longitude Centroid', 'Total Projected Violations in Cluster', 'Dominant Violation Type']],
+                    width="stretch",
+                    hide_index=True,
+                    key=build_map_key("pred_dbscan_table", selected_f_date, f_hour, f_time_bucket, selected_f_vtype)
+                )
         else:
             st.info("Predicted violations are too sparse during this hour/type combination to form dense cluster coordinates.")
 
