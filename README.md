@@ -1,6 +1,7 @@
 # Bangalore Illegal Parking Spots — Gridlock Intelligence
 
 AI-driven parking hotspot detection, congestion impact scoring, and enforcement prioritization for Bangalore.
+Link: https://bangalore-illegal-parking-spots-grdilockhackathon2bm.streamlit.app/
 
 ## Overview
 
