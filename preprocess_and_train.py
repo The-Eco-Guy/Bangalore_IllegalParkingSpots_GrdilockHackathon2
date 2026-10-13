@@ -183,11 +183,20 @@ agg['is_peak_hour'] = (agg['hour'].between(8, 11) | agg['hour'].between(17, 20))
 agg['is_morning']   = (agg['hour'].between(5, 11)).astype(int)
 agg['is_night']     = ((agg['hour'] >= 22) | (agg['hour'] <= 5)).astype(int)
 
+# 5. Chronological Train / Val / Test Split Boundaries
+TRAIN_END = pd.Timestamp('2024-02-01')
+VAL_END   = pd.Timestamp('2024-03-01')
+
 # H3 spatial encoding
 le = LabelEncoder()
 agg['h3_cell_id'] = le.fit_transform(agg['h3_8'])
-cell_hist_mean = agg.groupby('h3_8')['violation_count'].transform('mean')
-agg['cell_hist_mean'] = cell_hist_mean
+
+# Geostatistical Integrity: compute cell_hist_mean strictly from training data (pre-TRAIN_END)
+# to prevent future data leakage into validation and test partitions.
+train_subset = agg[agg['datetime'] < TRAIN_END]
+cell_train_means = train_subset.groupby('h3_8')['violation_count'].mean()
+global_train_mean = float(train_subset['violation_count'].mean()) if not train_subset.empty else 0.0
+agg['cell_hist_mean'] = agg['h3_8'].map(cell_train_means).fillna(global_train_mean)
 
 # Classification target
 HOTSPOT_THRESHOLD = 10
@@ -197,10 +206,6 @@ agg['is_hotspot'] = (agg['violation_count'] >= HOTSPOT_THRESHOLD).astype(int)
 LAG_COLS = ['lag_1h', 'lag_2h', 'lag_3h', 'lag_24h', 'rolling_3h_mean', 'rolling_24h_mean']
 agg_clean = agg.dropna(subset=LAG_COLS).copy()
 print(f"   Cleaned aggregation shape: {agg_clean.shape}")
-
-# 5. Chronological Train / Val / Test Split
-TRAIN_END = pd.Timestamp('2024-02-01')
-VAL_END   = pd.Timestamp('2024-03-01')
 
 train = agg_clean[agg_clean['datetime'] <  TRAIN_END]
 val   = agg_clean[(agg_clean['datetime'] >= TRAIN_END) & (agg_clean['datetime'] < VAL_END)]

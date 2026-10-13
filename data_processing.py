@@ -1,7 +1,12 @@
 import pandas as pd
 import numpy as np
-from sklearn.cluster import DBSCAN
 import os
+
+try:
+    from sklearn.cluster import DBSCAN
+except ImportError:
+    DBSCAN = None
+
 
 def load_historical_data():
     """

@@ -15,6 +15,8 @@ from sklearn.cluster import DBSCAN
 import data_processing
 import scoring
 import prediction
+import modern_ui
+import patrol
 
 # Set page configuration
 st.set_page_config(
@@ -320,6 +322,9 @@ def build_prediction_download(df, selected_date, selected_hour, selected_bucket,
         'gi_zscore',
         'gi_pvalue',
         'roi_class',
+        'is_exploration_target',
+        'exploration_score',
+        'exploration_reason',
     ]
     available_columns = [col for col in export_columns if col in export_df.columns]
     return export_df[available_columns].to_csv(index=False).encode('utf-8')
@@ -666,6 +671,14 @@ st.sidebar.image("https://img.icons8.com/color/96/police-car.png", width=70)
 st.sidebar.title("Navigation & Filters")
 nav = st.sidebar.radio("Go to:", ["🔍 Historical Analysis", "🔮 Predictive Forecasting"])
 
+# ── Command Center toggle (new — zero-touch to rest of file) ──
+ui_mode = st.sidebar.radio(
+    "View Mode",
+    ["📊 Standard View", "⚡ Command Center"],
+    index=0,
+    key="ui_mode_select",
+)
+
 # Global map settings
 blr_view = pdk.ViewState(
     latitude=12.9716,
@@ -765,6 +778,7 @@ if nav == "🔍 Historical Analysis":
     # Run dynamic spatial statistics
     df_scored = scoring.compute_gi_star(df_filtered, all_cells, 'weighted_pce', 'h3_8')
     df_scored, vol_thresh, pce_thresh = scoring.add_roi_classification(df_scored, 'violations', 'weighted_pce')
+    df_scored = scoring.compute_exploration_and_bias(df_scored, cell_meta, 'violations', 'weighted_pce')
     
     # Merge all cell metadata back
     df_scored = df_scored.merge(cell_meta, on='h3_8', how='left', suffixes=('', '_meta'))
@@ -821,6 +835,20 @@ if nav == "🔍 Historical Analysis":
         df_scored_clean['fill_color_pce'] = []
         df_scored_clean['line_color_pce'] = []
     
+    # ── Command Center branch ──────────────────────────────────────────────
+    if ui_mode == "⚡ Command Center":
+        modern_ui.render_command_center(
+            df_scored_clean=df_scored_clean,
+            cell_meta=cell_meta,
+            hist_df=hist_df,
+            mode="Historical Analysis",
+            pce_col="weighted_pce",
+            vol_col="violations",
+            map_key_prefix="cmd_hist",
+        )
+        st.stop()
+    # ── Standard View continues below ──────────────────────────────────────
+
     # KPIs Layout
     kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
     with kpi_col1:
@@ -1195,6 +1223,47 @@ if nav == "🔍 Historical Analysis":
             hide_index=True,
             key="hist_targets_tbl"
         )
+
+        # ── Mobile Patrol Dispatch Manifest & Circuit ──
+        st.write("### 🚔 Mobile Patrol Dispatch Manifest & Turn-by-Turn Circuit")
+        st.markdown(
+            "Converts the highest disruption bottlenecks into a sequential, distance-optimized patrol circuit "
+            "originating from Bangalore Traffic Police Headquarters (Infantry Rd). Officers in the field can "
+            "tap directly into Google Maps driving directions or receive WhatsApp broadcast manifests."
+        )
+        try:
+            route_df = patrol.optimize_patrol_route(
+                df_scored_clean,
+                max_stops=8,
+                pce_col='weighted_pce',
+                vol_col='violations'
+            )
+            if not route_df.empty:
+                p_km = route_df['cumulative_distance_km'].iloc[-1]
+                p_time = route_df['cumulative_time_min'].iloc[-1]
+                p_url = patrol.build_google_maps_multiwaypoint_url(route_df)
+                p_memo = patrol.generate_whatsapp_dispatch_memo(route_df, shift_name=f"{time_bucket}")
+
+                col_p1, col_p2 = st.columns([1, 1])
+                with col_p1:
+                    st.markdown(f"**Circuit Coverage:** {len(route_df)} nodes &nbsp;|&nbsp; **Total Circuit:** {p_km:.1f} km &nbsp;|&nbsp; **Est. Transit:** {p_time:.0f} mins")
+                    if p_url:
+                        st.link_button("🗺️ Open Turn-by-Turn Circuit in Google Maps", p_url, use_container_width=True)
+                with col_p2:
+                    csv_manifest = route_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        "📥 Download Field Dispatch Sheet (CSV)",
+                        data=csv_manifest,
+                        file_name=f"btp_dispatch_manifest_{start_date}_{end_date}.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        key="hist_dl_manifest_btn"
+                    )
+                with st.expander("📲 Copy WhatsApp / Police Radio Broadcast Memo", expanded=False):
+                    st.text_area("Radio Broadcast Text", value=p_memo, height=160, key="hist_radio_memo_area")
+        except Exception as e:
+            st.caption(f"Patrol route optimization unavailable: {e}")
+
         
         render_cell_inspector(
             df_scored_clean,
@@ -1389,6 +1458,7 @@ else:
     
     # Run ROI target classification for forecasts
     df_f_scored, vol_thresh_f, pce_thresh_f = scoring.add_roi_classification(df_f_scored, 'pred_count', 'pred_weighted_pce')
+    df_f_scored = scoring.compute_exploration_and_bias(df_f_scored, cell_meta, 'pred_count', 'pred_weighted_pce')
     
     # Clean up coordinates and add tooltip strings
     df_f_scored_clean = df_f_scored.dropna(subset=['lat_center', 'lon_center']).copy()
@@ -1455,6 +1525,20 @@ else:
         df_f_scored_clean['pred_congestion_active']
     )
     
+    # ── Command Center branch (Predictions) ───────────────────────────────
+    if ui_mode == "⚡ Command Center":
+        modern_ui.render_command_center(
+            df_scored_clean=df_f_scored_clean,
+            cell_meta=cell_meta,
+            hist_df=hist_df,
+            mode="Predictive Forecasting",
+            pce_col="pred_weighted_pce",
+            vol_col="pred_count",
+            map_key_prefix="cmd_pred",
+        )
+        st.stop()
+    # ── Standard View continues below ──────────────────────────────────────
+
     # KPIs Layout (Predictions)
     pk_col1, pk_col2, pk_col3, pk_col4 = st.columns(4)
     with pk_col1:
@@ -1880,6 +1964,50 @@ else:
             hide_index=True,
             key="pred_targets_tbl"
         )
+
+        # ── Mobile Patrol Dispatch Manifest & Turn-by-Turn Circuit (Forecast) ──
+        st.write("### 🚔 Predicted Mobile Patrol Dispatch Manifest & Circuit")
+        st.markdown(
+            "Pre-sequences next-shift forecasted chokepoints into an optimal turn-by-turn patrol circuit "
+            "originating from Bangalore Traffic Police Headquarters (Infantry Rd). Enables proactive deployment "
+            "before peak gridlock forms."
+        )
+        try:
+            pred_route_df = patrol.optimize_patrol_route(
+                pred_enforcement_visible,
+                max_stops=8,
+                pce_col='pred_weighted_pce',
+                vol_col='pred_count'
+            )
+            if not pred_route_df.empty:
+                f_km = pred_route_df['cumulative_distance_km'].iloc[-1]
+                f_time = pred_route_df['cumulative_time_min'].iloc[-1]
+                f_url = patrol.build_google_maps_multiwaypoint_url(pred_route_df)
+                f_memo = patrol.generate_whatsapp_dispatch_memo(
+                    pred_route_df,
+                    shift_name=f"Forecast: {selected_f_date} ({f_time_bucket})"
+                )
+
+                col_pf1, col_pf2 = st.columns([1, 1])
+                with col_pf1:
+                    st.markdown(f"**Forecast Scope:** {len(pred_route_df)} nodes &nbsp;|&nbsp; **Total Route:** {f_km:.1f} km &nbsp;|&nbsp; **Est. Transit:** {f_time:.0f} mins")
+                    if f_url:
+                        st.link_button("🗺️ Open Turn-by-Turn Circuit in Google Maps", f_url, use_container_width=True)
+                with col_pf2:
+                    csv_pred_manifest = pred_route_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        "📥 Download Forecast Dispatch Sheet (CSV)",
+                        data=csv_pred_manifest,
+                        file_name=f"btp_forecast_dispatch_manifest_{selected_f_date}_{clean_filename_part(f_time_bucket)}.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        key="pred_dl_manifest_btn"
+                    )
+                with st.expander("📲 Copy WhatsApp / Police Radio Broadcast Memo", expanded=False):
+                    st.text_area("Radio Broadcast Text", value=f_memo, height=160, key="pred_radio_memo_area")
+        except Exception as e:
+            st.caption(f"Forecast patrol route optimization unavailable: {e}")
+
         
         render_cell_inspector(
             pred_enforcement_visible,

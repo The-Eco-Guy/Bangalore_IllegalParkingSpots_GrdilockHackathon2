@@ -11,3 +11,4 @@ folium
 branca
 libpysal
 esda
+plotly
