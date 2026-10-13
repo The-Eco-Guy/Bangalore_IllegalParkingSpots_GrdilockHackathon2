@@ -662,22 +662,23 @@ def display_detailed_profile(cell_id, df_source, cell_meta):
         """, unsafe_allow_html=True)
     st.markdown("</div></div>", unsafe_allow_html=True)
 
-# Title banner
-st.markdown('<div class="header-title">🚨 Parking & Congestion Intelligence</div>', unsafe_allow_html=True)
-st.markdown('<div class="header-subtitle">AI-Driven Spatial Analytics & Forecasting for Bangalore Traffic Enforcement</div>', unsafe_allow_html=True)
-
 # Sidebar navigation
 st.sidebar.image("https://img.icons8.com/color/96/police-car.png", width=70)
 st.sidebar.title("Navigation & Filters")
 nav = st.sidebar.radio("Go to:", ["🔍 Historical Analysis", "🔮 Predictive Forecasting"])
 
-# ── Command Center toggle (new — zero-touch to rest of file) ──
+# ── Command Center toggle ──
 ui_mode = st.sidebar.radio(
     "View Mode",
-    ["📊 Standard View", "⚡ Command Center"],
+    ["⚡ Command Center", "📊 Detailed Analytics"],
     index=0,
     key="ui_mode_select",
 )
+
+# Title banner (only for Detailed Analytics; Command Center renders its own clean header)
+if ui_mode != "⚡ Command Center":
+    st.markdown('<div class="header-title">🚨 Bangalore Traffic Intelligence</div>', unsafe_allow_html=True)
+    st.markdown('<div class="header-subtitle">Spatial Analytics & Enforcement Optimization for Bangalore Traffic Police</div>', unsafe_allow_html=True)
 
 # Global map settings
 blr_view = pdk.ViewState(
@@ -862,7 +863,7 @@ if nav == "🔍 Historical Analysis":
         st.markdown(f"""
         <div class="glass-card">
             <div class="kpi-val">{df_scored_clean['weighted_pce'].sum():.1f}</div>
-            <div class="kpi-label">Congestion (PCE-Weighted)</div>
+            <div class="kpi-label">Traffic Impact Score</div>
         </div>
         """, unsafe_allow_html=True)
     with kpi_col3:
@@ -870,7 +871,7 @@ if nav == "🔍 Historical Analysis":
         st.markdown(f"""
         <div class="glass-card">
             <div class="kpi-val metric-red">{len(hotspot_cells)}</div>
-            <div class="kpi-label">Active Hotspots (Gi*)</div>
+            <div class="kpi-label">Problem Areas (Hotspots)</div>
         </div>
         """, unsafe_allow_html=True)
     with kpi_col4:
@@ -878,7 +879,7 @@ if nav == "🔍 Historical Analysis":
         st.markdown(f"""
         <div class="glass-card">
             <div class="kpi-val metric-orange">{len(tier1_cells)}</div>
-            <div class="kpi-label">Strategic Targets (Tier 1)</div>
+            <div class="kpi-label">Priority Tow Targets</div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -1552,7 +1553,7 @@ else:
         st.markdown(f"""
         <div class="glass-card">
             <div class="kpi-val">{df_f_scored_clean['pred_weighted_pce'].sum():.1f}</div>
-            <div class="kpi-label">Predicted Congestion Score</div>
+            <div class="kpi-label">Predicted Impact Score</div>
         </div>
         """, unsafe_allow_html=True)
     with pk_col3:
@@ -1560,14 +1561,14 @@ else:
         st.markdown(f"""
         <div class="glass-card">
             <div class="kpi-val metric-red">{pred_hotspots_count}</div>
-            <div class="kpi-label">Predicted Hotspot Cells (Gi*)</div>
+            <div class="kpi-label">Predicted Problem Areas</div>
         </div>
         """, unsafe_allow_html=True)
     with pk_col4:
         st.markdown(f"""
         <div class="glass-card">
             <div class="kpi-val metric-purple">{model_meta['auc']:.1%}</div>
-            <div class="kpi-label">Model AUC-ROC Accuracy</div>
+            <div class="kpi-label">Forecast Accuracy (AUC)</div>
         </div>
         """, unsafe_allow_html=True)
         
