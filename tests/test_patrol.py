@@ -70,16 +70,16 @@ class TestPatrolModule(unittest.TestCase):
 
     def test_assign_tactical_action(self):
         act_tier1 = patrol.assign_tactical_action({'roi_class': 'Tier 1: Max Disruption'})
-        self.assertIn("HEAVY TOW SQUAD", act_tier1)
+        self.assertIn("Inspect potential obstruction", act_tier1)
 
         act_tier2 = patrol.assign_tactical_action({'roi_class': 'Tier 2: Silent Bottleneck'})
-        self.assertIn("ZERO-TOLERANCE TOW", act_tier2)
+        self.assertIn("Verify potential traffic obstruction", act_tier2)
 
         act_tier3 = patrol.assign_tactical_action({'roi_class': 'Tier 3: Volume Hotspot'})
-        self.assertIn("E-TICKETING", act_tier3)
+        self.assertIn("applicable restrictions", act_tier3)
 
         act_exp = patrol.assign_tactical_action({'is_exploration_target': True})
-        self.assertIn("RECON PATROL", act_exp)
+        self.assertIn("recording coverage", act_exp)
 
     def test_optimize_patrol_route(self):
         route = patrol.optimize_patrol_route(self.sample_df, max_stops=4)
@@ -109,10 +109,48 @@ class TestPatrolModule(unittest.TestCase):
     def test_whatsapp_dispatch_memo(self):
         route = patrol.optimize_patrol_route(self.sample_df, max_stops=3)
         memo = patrol.generate_whatsapp_dispatch_memo(route, shift_name="PM Peak Shift")
-        self.assertIn("BTP TACTICAL ENFORCEMENT DISPATCH", memo)
+        self.assertIn("BTP PATROL PLANNING BRIEF", memo)
         self.assertIn("PM Peak Shift", memo)
-        self.assertIn("Total Circuit Distance:", memo)
+        self.assertIn("Straight-line distance estimate:", memo)
         self.assertIn("https://www.google.com/maps/dir/", memo)
+
+class TestReviewedPatrol(unittest.TestCase):
+    def setUp(self):
+        TestPatrolModule.setUp(self)
+
+    def test_route_contains_exact_reviewed_stops_including_lower_tiers(self):
+        chosen = self.sample_df.iloc[[0, 3, 4]]
+        route = patrol.optimize_patrol_route(chosen, max_stops=3, selected_only=True)
+        self.assertEqual(set(route.h3_8), set(chosen.h3_8))
+        self.assertEqual(len(route), 3)
+
+    def test_custom_origin_and_context_propagate_to_navigation_and_memo(self):
+        from urllib.parse import urlparse, parse_qs
+        route = patrol.optimize_patrol_route(self.sample_df.iloc[[0, 3]], selected_only=True, start_lat=12.9, start_lon=77.6)
+        url = patrol.build_google_maps_multiwaypoint_url(route, 12.9, 77.6)
+        self.assertEqual(parse_qs(urlparse(url).query)['origin'], ['12.90000,77.60000'])
+        context = {'source': 'Forecast', 'selected_start_date': '2024-04-09', 'selected_end_date': '2024-04-09',
+                   'selected_hours': '07:00–08:00 IST', 'metric_basis': 'average per hour'}
+        memo = patrol.generate_whatsapp_dispatch_memo(route, start_name='Local station', start_lat=12.9, start_lon=77.6, context=context)
+        for expected in ['Local station', '07:00–08:00 IST', '2024-04-09', 'Forecast', 'average per hour', url]:
+            self.assertIn(expected, memo)
+        self.assertNotIn('ZERO-TOLERANCE', memo)
+
+    def test_invalid_coordinates_do_not_enter_route(self):
+        bad = self.sample_df.copy()
+        bad.loc[0, 'lat_center'] = float('inf')
+        bad.loc[1, 'lon_center'] = 999
+        route = patrol.optimize_patrol_route(bad, selected_only=True)
+        self.assertNotIn('cell_silk_board', route.h3_8.tolist())
+        self.assertNotIn('cell_sony_world', route.h3_8.tolist())
+        with self.assertRaises(ValueError):
+            patrol.optimize_patrol_route(bad, start_lat=float('nan'))
+
+    def test_unspecified_hour_does_not_invent_evening_shift(self):
+        self.assertNotIn('PM Peak', patrol.assign_optimal_window({}))
+        self.assertEqual(patrol.assign_optimal_window({'hour': 7}), '07:00–08:00 IST')
+        self.assertEqual(patrol.assign_optimal_window({'selected_hours': 'All hours (IST)'}), 'All hours (IST)')
+
 
 if __name__ == '__main__':
     unittest.main()

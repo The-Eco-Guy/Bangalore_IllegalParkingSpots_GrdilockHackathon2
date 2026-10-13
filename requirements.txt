@@ -1,5 +1,5 @@
-streamlit
-pydeck
+streamlit>=1.56,<2
+pydeck>=0.9.1,<1
 h3
 pandas
 numpy

@@ -3,6 +3,18 @@
 AI-driven parking hotspot detection, congestion impact scoring, and enforcement prioritization for Bangalore.
 Link: https://bangalore-illegal-parking-spots-grdilockhackathon2bm.streamlit.app/
 
+## Using the policing workspace
+
+Run `make run` and choose **Historical Records** or **Forecast**, then **Operations** or **Analytics**. Operations provides a flat street map, a selectable priority list, location details, and reviewed patrol briefs. Click a hexagon, select a priority location, or use the searchable location selector to inspect an area. Phone layouts stack the workspace sections.
+
+The bundled records cover **November 10, 2023–April 8, 2024**. Cached forecasts cover **April 9–15, 2024**; these are archived estimates rather than a current incident feed. Dates and hours are shown in IST. Historical metrics are totals over the selection; forecast metrics are average predictions per hour. Night filters select early-morning and late-night hours within each selected calendar date.
+
+To prepare a patrol brief, review up to eight stops and edit the origin, then select **Generate reviewed route**. Navigation, CSV, and copyable text use the same reviewed route and selection context. Changing the filters, stops, or origin requires regeneration. Distance uses straight-line estimates and transit assumes 16 km/h, excluding time at stops; Google Maps supplies road navigation. Area centroids and modeled priorities require verification on arrival before deciding enforcement action.
+
+`make test` runs unit and Streamlit workflow regressions. For optional desktop/mobile browser checks, install Playwright (`python -m pip install playwright`) and run `python tests/browser_workspace.py` with Chrome or Chromium installed. The browser check starts and stops its own local server and writes preview screenshots to `/tmp/gridlock-preview-*.png`.
+
+Street tiles require network access. Forecast cluster points are deterministic illustrations around area centroids, not observed incident locations. Officer assignments, live feeds, and dispatch storage are outside this prototype.
+
 ## Overview
 
 **Bangalore Illegal Parking Spots — Gridlock Intelligence** is a spatial analytics and forecasting system that transforms parking violation records into actionable enforcement intelligence. The project is built around a simple but important idea:
@@ -49,7 +61,7 @@ This solution addresses the problem with a multi-layer intelligence pipeline:
 6. **Simulate micro-clusters** with DBSCAN to expose localized enforcement clusters.
 7. **Present everything in an interactive Streamlit dashboard** for real-world decision making.
 
-This turns raw violation data into a live command-center style view for traffic enforcement teams.
+This turns raw violation data into a command-desk planning view for traffic enforcement teams.
 
 ## Key Capabilities
 

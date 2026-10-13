@@ -1,70 +1,110 @@
-"""
-Unit tests for modern_ui.py (Command Center UI logic)
-"""
-
+"""Regression tests for selection, metric context, and map eligibility."""
+from datetime import date
+from types import SimpleNamespace
+from unittest.mock import patch
 import unittest
 import pandas as pd
-import numpy as np
 import modern_ui
 
+
 class TestModernUI(unittest.TestCase):
-    def setUp(self):
-        self.sample_df = pd.DataFrame([
-            {
-                'h3_8': 'cell_silk_board',
-                'junction_name': 'Silk Board Junction',
-                'lat_center': 12.9175,
-                'lon_center': 77.6238,
-                'roi_class': 'Tier 1: Max Disruption',
-                'weighted_pce': 160.0,
-                'violations': 95.0,
-            },
-            {
-                'h3_8': 'cell_sony_world',
-                'junction_name': 'Sony World Signal',
-                'lat_center': 12.9352,
-                'lon_center': 77.6245,
-                'roi_class': 'Tier 2: Silent Bottleneck',
-                'weighted_pce': 110.0,
-                'violations': 18.0,
-            },
-            {
-                'h3_8': 'cell_indiranagar',
-                'junction_name': 'Indiranagar 100ft Rd',
-                'lat_center': 12.9784,
-                'lon_center': 77.6408,
-                'roi_class': 'Tier 3: Volume Hotspot',
-                'weighted_pce': 80.0,
-                'violations': 60.0,
-            },
-        ])
+    def test_selection_parses_dict_and_attribute_events(self):
+        selection = {'objects': {'outline': [], 'locations': [{'h3_8': 'cell-a'}]}}
+        self.assertEqual(modern_ui.selected_cell_from_event({'selection': selection}), 'cell-a')
+        self.assertEqual(modern_ui.selected_cell_from_event(SimpleNamespace(selection=selection)), 'cell-a')
+        for event in [None, {}, {'selection': {'objects': {'locations': []}}}]:
+            self.assertIsNone(modern_ui.selected_cell_from_event(event))
 
-    def test_build_3d_colors(self):
-        res = modern_ui._build_3d_colors(self.sample_df, pce_col='weighted_pce')
-        self.assertIn('fill_color_3d', res.columns)
-        self.assertIn('elevation_3d', res.columns)
-        self.assertEqual(len(res), len(self.sample_df))
-        self.assertTrue(all(isinstance(c, list) and len(c) == 4 for c in res['fill_color_3d']))
-        # Highest PCE should have highest elevation
-        max_idx = res['weighted_pce'].idxmax()
-        min_idx = res['weighted_pce'].idxmin()
-        self.assertGreater(res.loc[max_idx, 'elevation_3d'], res.loc[min_idx, 'elevation_3d'])
+    def test_callbacks_update_shared_selection_only_for_available_cells(self):
+        state = {'map': {'selection': {'objects': {'locations': [{'h3_8': 'a'}]}}}}
+        with patch.object(modern_ui.st, 'session_state', state):
+            modern_ui.map_selection_callback('map', 'hist', ['a', 'b'])
+            self.assertEqual(state['hist_selected_cell'], 'a')
+            state['map']['selection']['objects']['locations'][0]['h3_8'] = 'gone'
+            modern_ui.map_selection_callback('map', 'hist', ['a', 'b'])
+            self.assertEqual(state['hist_selected_cell'], 'a')
+            state['table'] = {'selection': {'rows': [1]}}
+            modern_ui.table_selection_callback('table', 'hist', ['a', 'b'])
+            self.assertEqual(state['hist_selected_cell'], 'b')
+            self.assertEqual(state['hist_map_epoch'], 1)
+            modern_ui.select_location('hist', 'a')
+            self.assertEqual(state['hist_map_epoch'], 2)
 
-    def test_css_theme_defined(self):
-        self.assertTrue(len(modern_ui.COMMAND_CSS) > 0)
-        self.assertIn(".cmd-card", modern_ui.COMMAND_CSS)
-        self.assertIn(".tag-tow", modern_ui.COMMAND_CSS)
-        self.assertIn(".tag-ticket", modern_ui.COMMAND_CSS)
-        self.assertIn(".tag-watch", modern_ui.COMMAND_CSS)
+    def test_selection_is_preserved_or_cleared_after_filtering(self):
+        self.assertEqual(modern_ui.reconcile_selection('a', ['a', 'b']), 'a')
+        self.assertIsNone(modern_ui.reconcile_selection('a', ['b']))
+        self.assertIsNone(modern_ui.reconcile_selection(None, []))
 
-    def test_render_functions_do_not_crash_without_streamlit(self):
-        # When headless / without streamlit, these should exit cleanly without exceptions
-        modern_ui.render_header()
-        modern_ui.render_kpi_banner(100, 250.0, 5)
-        modern_ui.render_3d_hex_map(self.sample_df)
-        modern_ui.render_hourly_chart(pd.DataFrame({'hour': [17, 18], 'violation_count': [10, 20]}))
-        modern_ui.render_command_center(self.sample_df, None, None)
+    def test_hourly_data_respects_dates_bucket_and_exact_hour(self):
+        df = pd.DataFrame({'date': [date(2024, 4, 8)] * 3 + [date(2024, 4, 7)],
+                           'hour': [7, 10, 17, 7], 'violation_count': [2, 3, 9, 100]})
+        ctx = modern_ui.ViewContext(start_date=date(2024, 4, 8), end_date=date(2024, 4, 8), bucket='AM Peak (07:00 - 10:59)')
+        filtered = modern_ui.filter_hourly_data(df, ctx)
+        self.assertEqual(filtered.violation_count.sum(), 5)
+        self.assertEqual(modern_ui.hourly_profile(filtered).value.sum(), 5)
+        ctx = modern_ui.ViewContext(start_date=date(2024, 4, 8), end_date=date(2024, 4, 8), hour=10)
+        self.assertEqual(modern_ui.filter_hourly_data(df, ctx).hour.tolist(), [10])
 
-if __name__ == '__main__':
-    unittest.main()
+    def test_forecasts_keep_fractional_values_and_explicit_units(self):
+        ctx = modern_ui.ViewContext('Forecast', date(2024, 4, 9), date(2024, 4, 9), hour=7)
+        self.assertEqual(ctx.window, '07:00–08:00 IST')
+        self.assertEqual(ctx.export_fields()['metric_basis'], 'average per hour')
+        self.assertIn('/ hour', modern_ui.metric_labels(True)[0])
+        hourly = modern_ui.hourly_profile(pd.DataFrame({'hour': [7, 7, 8], 'pred_count': [.1, .25, .6]}), True)
+        self.assertAlmostEqual(hourly.value.iloc[0], .35)
 
+    def test_invalid_coordinates_are_excluded_and_exploration_retained(self):
+        df = pd.DataFrame({'h3_8': ['a', 'b', 'c', 'd'], 'lat_center': [12, float('inf'), 100, 13],
+                           'lon_center': [77, 77, 77, 78], 'violations': [1, 3, 3, 0],
+                           'weighted_pce': [2, 5, 5, 0], 'is_exploration_target': [False, False, False, True]})
+        ranked = modern_ui.ranked_locations(df)
+        self.assertEqual(ranked.h3_8.tolist(), ['a', 'd'])
+        self.assertEqual(modern_ui.priority_label(ranked.iloc[1]), 'Verification patrol')
+
+    def test_fractional_simulation_is_reproducible_and_not_rounded_away(self):
+        counts = [modern_ui.forecast_sample_count(.25, seed) for seed in range(1000)]
+        self.assertGreater(sum(counts), 200)
+        self.assertLess(sum(counts), 300)
+        self.assertEqual(modern_ui.forecast_sample_count(2.25, 42), modern_ui.forecast_sample_count(2.25, 42))
+        self.assertEqual(modern_ui.forecast_sample_count(float('nan'), 1), 0)
+
+
+class TestForecastExports(unittest.TestCase):
+    def test_export_rows_match_each_visible_layer_and_keep_metric_units(self):
+        from io import BytesIO
+        df = pd.DataFrame({
+            'h3_8': ['density', 'impact', 'both'], 'junction_name': ['A', 'B', 'C'],
+            'pred_count': [.25, .1, 2.5], 'pred_weighted_pce': [1., 4., 8.],
+            'pred_density_active': [True, False, True], 'pred_congestion_active': [False, True, True],
+            'pred_spillover_significant': [False, True, False], 'pred_enforcement_visible': [False, True, True],
+            'gi_zscore': [0., 2., 0.], 'roi_class': ['Standard', 'Tier 2: Silent Bottleneck', 'Tier 1: Max Disruption'],
+        })
+        expected = {
+            'Predicted violations / hour': {'density', 'both'},
+            'Predicted impact / hour': {'impact', 'both'},
+            'Predicted Combined Map': {'density', 'impact', 'both'},
+            'Predicted Spillover': {'impact'},
+            'Predicted Enforcement Plan': {'impact', 'both'},
+            'Predicted Clusters (DBSCAN)': {'density', 'impact', 'both'},
+        }
+        for layer, cells in expected.items():
+            with self.subTest(layer=layer):
+                data = modern_ui.build_prediction_download(df, '2024-04-09', 7, 'AM Peak (07:00 - 10:59)', layer)
+                exported = pd.read_csv(BytesIO(data))
+                self.assertEqual(set(exported.h3_8), cells)
+                self.assertTrue((exported.metric_basis == 'average per hour').all())
+                self.assertTrue((exported.selected_forecast_hour == 7).all())
+                self.assertTrue(exported.visible_in_selected_layer.all())
+                if layer == 'Predicted Combined Map':
+                    self.assertEqual(exported.predicted_value.tolist(), exported.pred_weighted_pce.tolist())
+                if layer == 'Predicted violations / hour':
+                    self.assertIn(.25, exported.predicted_value.tolist())
+                self.assertTrue(exported.suggested_verification.str.contains('Inspect|Verify|Routine').all())
+
+    def test_empty_forecast_export_retains_schema(self):
+        from io import BytesIO
+        df = pd.DataFrame(columns=['h3_8', 'pred_count', 'pred_weighted_pce', 'roi_class'])
+        data = modern_ui.build_prediction_download(df, '2024-04-09', 'All', 'All', 'Predicted violations / hour')
+        exported = pd.read_csv(BytesIO(data))
+        self.assertTrue(exported.empty)
+        self.assertIn('metric_basis', exported.columns)
